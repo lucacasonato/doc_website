@@ -1,14 +1,14 @@
 // Copyright 2020 the Deno authors. All rights reserved. MIT license.
 
 import React, { memo } from "react";
+import Link from "next/link";
 import {
   TsTypeDef,
   TsTypeDefKind,
   LiteralDefKind,
-  findNodeByScopedName,
+  getLinkByScopedName,
 } from "../util/docs";
-import Link from "next/link";
-import { useFlattend } from "../util/data";
+import { useFlattend, useRuntimeBuiltins } from "../util/data";
 import { Params } from "./Function";
 
 export const TsType = memo(
@@ -32,11 +32,13 @@ export const TsType = memo(
           </>
         );
       case TsTypeDefKind.FnOrConstructor: {
-        const paramElements: React.ReactNode[] = [];
         return (
           <>
             {tsType.fnOrConstructor.constructor ? "new " : null} (
-            <Params params={tsType.fnOrConstructor.params} scope={scope} />) =>{" "}
+            <Params
+              params={tsType.fnOrConstructor.params}
+              scope={scope}
+            />) {"=> "}
             <TsType tsType={tsType.fnOrConstructor.tsType} scope={scope} />
           </>
         );
@@ -129,14 +131,34 @@ export const TsType = memo(
             <>
               {property.name}
               {property.tsType ? (
-                <span className="text-gray-600">
+                <>
                   : <TsType tsType={property.tsType} scope={scope}></TsType>
-                </span>
+                </>
               ) : null}
             </>,
             ", "
           );
         });
+        tsType.typeLiteral.indexSignatures.forEach((indexSignature) => {
+          final.push(
+            <>
+              {indexSignature.readonly && (
+                <span className="text-gray-600 dark:text-gray-400">
+                  readonly{" "}
+                </span>
+              )}
+              <Params params={indexSignature.params} scope={scope} />
+              {indexSignature.tsType ? (
+                <>
+                  :{" "}
+                  <TsType tsType={indexSignature.tsType} scope={scope}></TsType>
+                </>
+              ) : null}
+            </>,
+            ", "
+          );
+        });
+
         final.pop();
         return (
           <>
@@ -155,33 +177,25 @@ export const TsType = memo(
         );
       case TsTypeDefKind.TypeQuery: {
         const flattend = useFlattend();
-        const node = findNodeByScopedName(
+        const runtimeBuiltins = useRuntimeBuiltins();
+        const link = getLinkByScopedName(
           flattend,
+          runtimeBuiltins,
           tsType.typeQuery,
           scope ?? []
         );
         return (
           <>
-            typeof{" "}
-            {node ? (
-              <Link
-                href="/https/[...url]"
-                as={`#${node.scope ? node.scope.join(".") + "." : ""}${
-                  node.name
-                }`}
-              >
-                <a className="link">{tsType.typeQuery}</a>
-              </Link>
-            ) : (
-              tsType.typeQuery
-            )}
+            typeof <LinkRef link={link} name={tsType.typeQuery} />
           </>
         );
       }
       case TsTypeDefKind.TypeRef: {
         const flattend = useFlattend();
-        const node = findNodeByScopedName(
+        const runtimeBuiltins = useRuntimeBuiltins();
+        const link = getLinkByScopedName(
           flattend,
+          runtimeBuiltins,
           tsType.typeRef.typeName,
           scope ?? [],
           "type"
@@ -193,24 +207,13 @@ export const TsType = memo(
         paramElements.pop();
         return (
           <>
-            {node ? (
-              <Link
-                href="/https/[...url]"
-                as={`#${node.scope ? node.scope.join(".") + "." : ""}${
-                  node.name
-                }`}
-              >
-                <a className="link">{tsType.typeRef.typeName}</a>
-              </Link>
-            ) : (
-              tsType.typeRef.typeName
-            )}
+            <LinkRef link={link} name={tsType.typeRef.typeName} />
             {tsType.typeRef.typeParams ? (
-              <>
+              <span className="text-gray-600 dark:text-gray-400">
                 {"<"}
                 {paramElements}
                 {">"}
-              </>
+              </span>
             ) : null}
           </>
         );
@@ -228,3 +231,40 @@ export const TsType = memo(
     }
   }
 );
+
+export function LinkRef(props: {
+  link: ReturnType<typeof getLinkByScopedName>;
+  name: string;
+}) {
+  switch (props.link?.type) {
+    case "local":
+    case "external":
+      return (
+        <a className="link" href={props.link.href}>
+          {props.name}
+        </a>
+      );
+    case "builtin":
+      return (
+        <Link href={`/builtin/stable${props.link.href}`}>
+          <a className="link">{props.name}</a>
+        </Link>
+      );
+    case "remote":
+      const url = props.link.remote;
+      if (url.startsWith("https://")) {
+        return (
+          <Link
+            href="/https/[...url]"
+            as={`${url.toString().replace("https://", "/https/")}#${
+              props.link.node
+            }`}
+          >
+            <a className="link">{props.name}</a>
+          </Link>
+        );
+      }
+    default:
+      return <>{props.name}</>;
+  }
+}

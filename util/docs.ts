@@ -1,5 +1,7 @@
 // Copyright 2020 the Deno authors. All rights reserved. MIT license.
 
+import { schoolBook } from "react-syntax-highlighter/dist/esm/styles/hljs";
+
 export enum DocNodeKind {
   Function = "function",
   Variable = "variable",
@@ -8,6 +10,7 @@ export enum DocNodeKind {
   Interface = "interface",
   TypeAlias = "typeAlias",
   Namespace = "namespace",
+  Import = "import",
 }
 export interface DocNodeLocation {
   filename: string;
@@ -53,6 +56,7 @@ export interface TsTypeLiteralDef {
   methods: LiteralMethodDef[];
   properties: LiteralPropertyDef[];
   callSignatures: LiteralCallSignatureDef[];
+  indexSignatures: LiteralIndexSignatureDef[];
 }
 export interface LiteralMethodDef {
   name: string;
@@ -69,6 +73,11 @@ export interface LiteralCallSignatureDef {
   params: ParamDef[];
   tsType?: TsTypeDef;
 }
+export interface LiteralIndexSignatureDef {
+  readonly: boolean;
+  params: ParamDef[];
+  tsType?: TsTypeDef;
+}
 export interface LiteralMethodDef {
   params: ParamDef[];
   returnType?: TsTypeDef;
@@ -80,17 +89,17 @@ export enum LiteralDefKind {
 }
 export type LiteralDef =
   | {
-      kind: LiteralDefKind.Number;
-      number: number;
-    }
+    kind: LiteralDefKind.Number;
+    number: number;
+  }
   | {
-      kind: LiteralDefKind.String;
-      string: string;
-    }
+    kind: LiteralDefKind.String;
+    string: string;
+  }
   | {
-      kind: LiteralDefKind.Boolean;
-      boolean: boolean;
-    };
+    kind: LiteralDefKind.Boolean;
+    boolean: boolean;
+  };
 export enum TsTypeDefKind {
   Keyword = "keyword",
   Literal = "literal",
@@ -200,19 +209,51 @@ export type TsTypeDef =
   | TsTypeDefTypeRef
   | TsTypeDefUnion;
 
-export enum ParamKind {
-  Identifier = "identifier",
-  Rest = "rest",
-  Array = "array",
-  Object = "object",
-}
-
-export interface ParamDef {
-  name: string;
-  kind: ParamKind;
-  optional: boolean;
-  tsType?: TsTypeDef;
-}
+export type ParamDef =
+  | {
+    kind: "array";
+    elements: (ParamDef | null)[];
+    optional: boolean;
+    tsType?: TsTypeDef;
+  }
+  | {
+    kind: "assign";
+    left: ParamDef;
+    right: string;
+    tsType?: TsTypeDef;
+  }
+  | {
+    kind: "identifier";
+    name: string;
+    optional: boolean;
+    tsType?: TsTypeDef;
+  }
+  | {
+    kind: "object";
+    props: ObjectPatPropDef[];
+    optional: boolean;
+    tsType?: TsTypeDef;
+  }
+  | {
+    kind: "rest";
+    arg: ParamDef;
+    tsType?: TsTypeDef;
+  };
+export type ObjectPatPropDef =
+  | {
+    kind: "assign";
+    key: string;
+    value?: string;
+  }
+  | {
+    kind: "keyValue";
+    key: string;
+    value: ParamDef;
+  }
+  | {
+    kind: "rest";
+    arg: ParamDef;
+  };
 export interface FunctionDef {
   params: ParamDef[];
   returnType?: TsTypeDef;
@@ -248,10 +289,17 @@ export interface ClassDef {
   isAbstract: boolean;
   constructors: ClassConstructorDef[];
   properties: ClassPropertyDef[];
+  indexSignatures: ClassIndexSignatureDef[];
   methods: ClassMethodDef[];
   extends?: string;
-  implements: string[];
+  implements: TsTypeDef[];
   typeParams: TsTypeParamDef[];
+  superTypeParams: TsTypeDef[];
+}
+export interface ClassIndexSignatureDef {
+  readonly: boolean;
+  params: ParamDef[];
+  tsType?: TsTypeDef;
 }
 export interface EnumMemberDef {
   name: string;
@@ -278,19 +326,28 @@ export interface InterfaceCallSignatureDef extends Omit<DocNodeShared, "name"> {
 }
 
 export interface InterfaceDef {
-  extends: string[];
+  extends: TsTypeDef[];
   methods: InterfaceMethodDef[];
   properties: InterfacePropertyDef[];
   callSignatures: InterfaceCallSignatureDef[];
+  indexSignatures: InterfaceIndexSignatureDef[];
   typeParams: TsTypeParamDef[];
 }
-
-export interface InterfaceDef {}
+export interface InterfaceIndexSignatureDef {
+  readonly: boolean;
+  params: ParamDef[];
+  tsType?: TsTypeDef;
+}
 export interface TypeAliasDef {
   tsType: TsTypeDef;
 }
 export interface NamespaceDef {
   elements: DocNode[];
+}
+export interface ImportDef {
+  src: string;
+  local: string;
+  imported?: string;
 }
 
 export type DocNodeFunction = DocNodeShared & {
@@ -321,6 +378,10 @@ export type DocNodeNamespace = DocNodeShared & {
   kind: DocNodeKind.Namespace;
   namespaceDef: NamespaceDef;
 };
+export type DocNodeImport = DocNodeShared & {
+  kind: DocNodeKind.Import;
+  importDef: ImportDef;
+};
 
 export type DocNode =
   | DocNodeFunction
@@ -329,7 +390,8 @@ export type DocNode =
   | DocNodeEnum
   | DocNodeInterface
   | DocNodeTypeAlias
-  | DocNodeNamespace;
+  | DocNodeNamespace
+  | DocNodeImport;
 
 export interface GroupedNodes {
   functions: DocNodeFunction[];
@@ -344,8 +406,9 @@ export interface GroupedNodes {
 export function expandNamespaces(docs: DocNode[]): DocNode[] {
   return docs.flatMap((parent): any => {
     if (parent.kind === DocNodeKind.Namespace) {
-      const scope = parent.scope ?? [];
-      scope.push(parent.name);
+      const scope = Array.isArray(parent.scope)
+        ? [...parent.scope, parent.name]
+        : [parent.name];
       return [
         {
           ...parent,
@@ -354,7 +417,7 @@ export function expandNamespaces(docs: DocNode[]): DocNode[] {
               parent.namespaceDef.elements.map((el) => ({
                 ...el,
                 scope: scope,
-              }))
+              })),
             ),
           },
         },
@@ -380,7 +443,14 @@ function nodeName(a: DocNode): string {
 }
 
 export function sortByAlphabet(docs: DocNode[]): DocNode[] {
-  return docs.sort((a, b) =>  nodeName(a) < nodeName(b) ? -1 : 1);
+  return docs.sort((a, b) => {
+    const scopeCountA = a.scope?.length ?? 0;
+    const scopeCountB = b.scope?.length ?? 0;
+    if (scopeCountA !== scopeCountB) {
+      return scopeCountA - scopeCountB;
+    }
+    return (nodeName(a) < nodeName(b) ? -1 : 1);
+  });
 }
 
 export function groupNodes(docs: DocNode[]): GroupedNodes {
@@ -417,28 +487,33 @@ export function groupNodes(docs: DocNode[]): GroupedNodes {
       case DocNodeKind.Namespace:
         groupedNodes.namespaces.push(node);
         break;
+      case DocNodeKind.Import:
+        break;
     }
   });
 
   return groupedNodes;
 }
 
-export function findNodeByScopedName(
+function findNodeByScopedName(
   flattend: DocNode[],
   name: string,
   initialScope: string[],
-  mustBe?: "type" | "class"
+  mustBe?: "type" | "class",
 ): DocNode | undefined {
   const scope = [...initialScope];
   let done = false;
   while (!done) {
     const node = flattend.find(
       (node) =>
+        // Name + scope must match (if not import)
+        node.kind !== DocNodeKind.Import &&
         (node.scope && node.scope?.length > 0
-          ? node.scope.join(".") + "."
-          : "") +
-          node.name ===
+                ? node.scope.join(".") + "."
+                : "") +
+              node.name ===
           (scope.length > 0 ? scope.join(".") + "." : "") + name &&
+        // Must be a type, or class, or any. Dependant on settings
         ((mustBe === "type" &&
           (node.kind === DocNodeKind.Class ||
             node.kind === DocNodeKind.Enum ||
@@ -446,10 +521,16 @@ export function findNodeByScopedName(
             node.kind === DocNodeKind.TypeAlias ||
             node.kind === DocNodeKind.Namespace)) ||
           (mustBe === "class" && node.kind === DocNodeKind.Class) ||
-          mustBe === undefined)
+          mustBe === undefined),
     );
     if (node) return node;
     if (scope.length === 0) {
+      const import_ = flattend.find(
+        (node) =>
+          node.kind === DocNodeKind.Import &&
+          (name + ".").startsWith(node.name + "."),
+      );
+      if (import_) return import_;
       done = true;
     }
     scope.pop();
@@ -457,9 +538,116 @@ export function findNodeByScopedName(
   return undefined;
 }
 
+function globalObjectMDN(name: string): { [name: string]: string } {
+  return {
+    [name]:
+      `https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/${name}`,
+  };
+}
+
+const MDN_BUILTINS: { [builtin: string]: string } = {
+  ...globalObjectMDN("Object"),
+  ...globalObjectMDN("Function"),
+  ...globalObjectMDN("Boolean"),
+  ...globalObjectMDN("Error"),
+  ...globalObjectMDN("TypeError"),
+  ...globalObjectMDN("Number"),
+  ...globalObjectMDN("BigInt"),
+  ...globalObjectMDN("Math"),
+  ...globalObjectMDN("Date"),
+  ...globalObjectMDN("String"),
+  ...globalObjectMDN("RegExp"),
+  ...globalObjectMDN("Array"),
+  ...globalObjectMDN("Int8Array"),
+  ...globalObjectMDN("Uint8Array"),
+  ...globalObjectMDN("Uint8ClampedArray"),
+  ...globalObjectMDN("Int16Array"),
+  ...globalObjectMDN("Uint16Array"),
+  ...globalObjectMDN("Int32Array"),
+  ...globalObjectMDN("Uint32Array"),
+  ...globalObjectMDN("Float32Array"),
+  ...globalObjectMDN("Float64Array"),
+  ...globalObjectMDN("BigInt64Array"),
+  ...globalObjectMDN("BigUint64Array"),
+  ...globalObjectMDN("Map"),
+  ...globalObjectMDN("Set"),
+  ...globalObjectMDN("WeakMap"),
+  ...globalObjectMDN("WeakSet"),
+  ...globalObjectMDN("ArrayBuffer"),
+  ...globalObjectMDN("SharedArrayBuffer"),
+  ...globalObjectMDN("Atomics"),
+  ...globalObjectMDN("DataView"),
+  ...globalObjectMDN("JSON"),
+  ...globalObjectMDN("Promise"),
+  ...globalObjectMDN("Generator"),
+  ...globalObjectMDN("GeneratorFunction"),
+  ...globalObjectMDN("AsyncFunction"),
+  ...globalObjectMDN("Reflect"),
+  ...globalObjectMDN("Proxy"),
+  ...globalObjectMDN("Intl"),
+};
+
+export function getLinkByScopedName(
+  flattend: DocNode[],
+  runtimeBuiltins: DocNode[] | undefined,
+  name: string,
+  initialScope: string[],
+  mustBe?: "type" | "class",
+):
+  | { type: "local"; href: string }
+  | { type: "remote"; remote: string; node: string }
+  | { type: "builtin"; href: string }
+  | { type: "external"; href: string }
+  | undefined {
+  const node = findNodeByScopedName(flattend, name, initialScope, mustBe);
+  if (node) {
+    if (node.kind === DocNodeKind.Import) {
+      if (node.importDef.imported) {
+        return {
+          type: "remote",
+          remote: node.importDef.src,
+          node: node.importDef.imported ?? node.name,
+        };
+      } else {
+        return {
+          type: "remote",
+          remote: node.importDef.src,
+          node: name.substring(node.name.length),
+        };
+      }
+    }
+    return {
+      type: "local",
+      href: `#${node.scope ? node.scope.join(".") + "." : ""}${node.name}`,
+    };
+  }
+  if (runtimeBuiltins) {
+    const node = findNodeByScopedName(
+      runtimeBuiltins,
+      name,
+      [],
+      mustBe,
+    );
+    if (node) {
+      return {
+        type: "builtin",
+        href: `#${node.scope ? node.scope.join(".") + "." : ""}${node.name}`,
+      };
+    }
+  }
+  const builtin = MDN_BUILTINS[name];
+  if (builtin) {
+    return {
+      type: "external",
+      href: builtin,
+    };
+  }
+  return undefined;
+}
+
 export function getFieldsForClassRecursive(
   flattend: DocNode[],
-  parent: DocNodeClass
+  parent: DocNodeClass,
 ): {
   methods: (ClassMethodDef & { inherited: boolean })[];
   properties: (ClassPropertyDef & { inherited: boolean })[];
@@ -469,7 +657,7 @@ export function getFieldsForClassRecursive(
       flattend,
       parent.classDef.extends,
       parent.scope ?? [],
-      "class"
+      "class",
     ) as DocNodeClass;
     if (node) {
       const r = getFieldsForClassRecursive(flattend, node);

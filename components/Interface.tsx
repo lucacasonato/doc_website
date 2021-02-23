@@ -1,11 +1,10 @@
 // Copyright 2020 the Deno authors. All rights reserved. MIT license.
 
 import React from "react";
-import { DocNodeInterface, findNodeByScopedName, DocNode } from "../util/docs";
+import { DocNodeInterface } from "../util/docs";
 import { SimpleCard, SimpleSubCard } from "./SinglePage";
 import { TypeParams } from "./Class";
-import { useFlattend } from "../util/data";
-import Link from "next/link";
+import { TsType } from "./TsType";
 
 export function InterfaceCard({
   node,
@@ -15,32 +14,8 @@ export function InterfaceCard({
   nested: boolean;
 }) {
   const parent = node;
-  const flattend = useFlattend();
-  const extendsNodes: {
-    [name: string]: DocNode | undefined;
-  } = {};
-  for (const name of node.interfaceDef.extends) {
-    extendsNodes[name] = name
-      ? findNodeByScopedName(flattend, name, node.scope ?? [])
-      : undefined;
-  }
-  const extendsItems = Object.keys(extendsNodes).flatMap((name) => {
-    const extendsNode = extendsNodes[name];
-    return [
-      extendsNode ? (
-        <Link
-          href="/https/[...url]"
-          as={`#${extendsNode.scope ? extendsNode.scope.join(".") + "." : ""}${
-            extendsNode.name
-          }`}
-        >
-          <a className="link">{extendsNode.name}</a>
-        </Link>
-      ) : (
-        name
-      ),
-      ", ",
-    ];
+  const extendsItems = node.interfaceDef.extends.flatMap((tsType) => {
+    return [<TsType tsType={tsType} scope={parent.scope ?? []} />, ", "];
   });
   extendsItems.pop();
   return (
@@ -51,7 +26,7 @@ export function InterfaceCard({
       suffix={
         <>
           {node.interfaceDef.typeParams.length > 0 ? (
-            <span className="text-gray-600">
+            <span className="text-gray-600 dark:text-gray-400">
               {"<"}
               <TypeParams
                 params={node.interfaceDef.typeParams}
@@ -60,7 +35,7 @@ export function InterfaceCard({
               {">"}
             </span>
           ) : null}
-          {Object.keys(extendsNodes).length > 0 ? (
+          {extendsItems.length > 0 ? (
             <>
               {" "}
               <span className="keyword">extends</span> {extendsItems}
@@ -72,7 +47,9 @@ export function InterfaceCard({
         <>
           {node.interfaceDef.callSignatures.length > 0 ? (
             <div className="mt-2">
-              <p className="font-medium text-md">Call Signatures</p>
+              <p className="font-medium text-md text-gray-800 dark:text-gray-300">
+                Call Signatures
+              </p>
               {node.interfaceDef.callSignatures.map((node) => {
                 return (
                   <SimpleSubCard
@@ -86,7 +63,9 @@ export function InterfaceCard({
           ) : null}
           {node.interfaceDef.properties.length > 0 ? (
             <div className="mt-2">
-              <p className="font-medium text-md">Properties</p>
+              <p className="font-medium text-md text-gray-800 dark:text-gray-300">
+                Properties
+              </p>
               {node.interfaceDef.properties.map((node) => {
                 return (
                   <SimpleSubCard
@@ -100,7 +79,9 @@ export function InterfaceCard({
           ) : null}
           {node.interfaceDef.methods.length > 0 ? (
             <div className="mt-2">
-              <p className="font-medium text-md">Methods</p>
+              <p className="font-medium text-md text-gray-800 dark:text-gray-300">
+                Methods
+              </p>
               {node.interfaceDef.methods.map((node) => {
                 return (
                   <SimpleSubCard
@@ -108,6 +89,23 @@ export function InterfaceCard({
                     optional={node.optional}
                     params={node.params}
                     returnType={node.returnType}
+                  />
+                );
+              })}
+            </div>
+          ) : null}
+          {node.interfaceDef.indexSignatures.length > 0 ? (
+            <div className="mt-2">
+              <p className="font-medium text-md text-gray-800 dark:text-gray-300">
+                Index Signatures
+              </p>
+              {node.interfaceDef.indexSignatures.map((node) => {
+                return (
+                  <SimpleSubCard
+                    node={{ name }}
+                    prefix={node.readonly ? "readonly " : ""}
+                    computedParams={node.params}
+                    returnType={node.tsType}
                   />
                 );
               })}

@@ -1,6 +1,6 @@
 // Copyright 2020 the Deno authors. All rights reserved. MIT license.
 
-import { useReducer, useEffect } from "react";
+import React, { useReducer, useEffect } from "react";
 import Link from "next/link";
 import Head from "next/head";
 import useSWR from "swr";
@@ -19,6 +19,24 @@ export const Documentation = ({
     [entrypoint, loadCount],
     () =>
       getData(entrypoint, "", loadCount > 0).catch((err) => {
+        throw err?.message ?? err.toString();
+      }),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      refreshWhenHidden: false,
+      refreshWhenOffline: false,
+    }
+  );
+
+  const { data: runtimeBuiltinsData } = useSWR<DocsData>(
+    [loadCount],
+    () =>
+      getData(
+        "https://github.com/denoland/deno/releases/latest/download/lib.deno.d.ts",
+        "",
+        loadCount > 0
+      ).catch((err) => {
         throw err?.message ?? err.toString();
       }),
     {
@@ -54,14 +72,16 @@ export const Documentation = ({
     }
 
     return (
-      <div className="flex flex-col items-center justify-center h-full p-4 text-center">
-        <div className="text-3xl text-gray-800">{title}</div>
-        <div className="mt-2 text-lg">{details}</div>
+      <div className="flex flex-col items-center justify-center h-full p-4 text-center bg-white dark:bg-light-black-800">
+        <div className="text-3xl text-gray-800 dark:text-gray-200">{title}</div>
+        <div className="mt-2 text-lg text-gray-800 dark:text-gray-200">
+          {details}
+        </div>
         <Link href="/">
           <a className="mt-4 text-xl link">Go back home</a>
         </Link>
         <a
-          href="https://github.com/bartlomieju/deno_doc/issues"
+          href="https://github.com/denoland/doc_website/issues"
           className="mt-5 text-sm link"
         >
           Report Issue
@@ -83,6 +103,7 @@ export const Documentation = ({
         forceReload={forceReload}
         entrypoint={entrypoint}
         data={data}
+        runtimeBuiltinsData={runtimeBuiltinsData}
       />
     </>
   );

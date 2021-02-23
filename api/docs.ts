@@ -4,17 +4,17 @@ import {
   APIGatewayProxyEvent,
   APIGatewayProxyResult,
   Context,
-} from "https://deno.land/x/lambda/mod.ts";
+} from "https://deno.land/x/lambda@1.4.0/mod.ts";
 
 const decoder = new TextDecoder();
 
 export async function handler(
   event: APIGatewayProxyEvent,
-  context: Context
+  context: Context,
 ): Promise<APIGatewayProxyResult> {
   const url = new URL(
     JSON.parse(event.body || '{ "path": "" }').path,
-    "https://example.com"
+    "https://example.com",
   );
 
   const entrypoint = url.searchParams.get("entrypoint");
@@ -48,14 +48,16 @@ export async function handler(
 
   let killed = false;
 
-  // Zeit timeout is 10 seconds for free tier: https://zeit.co/docs/v2/platform/limits
+  // Zeit timeout is 60 seconds for pro tier: https://zeit.co/docs/v2/platform/limits
   const timer = setTimeout(() => {
     killed = true;
     proc.kill(Deno.Signal.SIGKILL);
-  }, 9000);
+  }, 58000);
 
-  const out = await proc.output();
-  const errOut = await proc.stderrOutput();
+  const [out, errOut] = await Promise.all([
+    proc.output(),
+    proc.stderrOutput(),
+  ]);
   const status = await proc.status();
   clearTimeout(timer);
   proc.close();
